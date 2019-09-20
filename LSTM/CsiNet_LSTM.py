@@ -26,31 +26,43 @@ T = 10
 def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2):
 
 	# base CSINet models
-	CsiNet_hi = CsiNet(img_channels, img_height, img_width, M_1) # CSINet with M_1 dimensional latent space
-	CsiNet_lo = CsiNet(img_channels, img_height, img_width, M_2, aux_num=M_1) # CSINet with M_2+M_1 dimensional latent space
+	CsiNet_hi, encoded = CsiNet(img_channels, img_height, img_width, M_1) # CSINet with M_1 dimensional latent space
+	aux = Input((M_1,))
+	CsiNet_lo, _ = CsiNet(img_channels, img_height, img_width, M_2, aux=aux) # CSINet with M_2+M_1 dimensional latent space
 
 	print("--- High Dimensional (M_1) Latent Space CsiNet ---")
 	CsiNet_hi.summary()
 	print("--- Lower Dimensional (M_2) Latent Space CsiNet ---")
-	CsiNet_lo.summary() # this doesn't seem to be compiling with auxiliary input... double-check this
+	CsiNet_lo.summary()
 	# TO-DO: load weights in hi/lo models
 
 	# TO-DO: split large input tensor to use as inputs to 1:T CSINets
-	x = Input((img_height, img_width, img_channels, T))
+	x = Input((img_channels, img_height, img_width, T))
+	CsiOut = []
 	for i in range(T):
+		CsiIn = Lambda( lambda x: x[:,:,:,:,i])(x)
 		if i == 0:
 			# use CsiNet_hi for t=1
-			pass
+			[OutLayer, EncodedLayer] = CsiNet_hi(CsiIn)
+			print('#{} - EncodedLayer: {}'.format(i, EncodedLayer))
 		else:
 			# use CsiNet_lo for t in [2:T]
 			# TO-DO: make sure M_1 codeword from CSINet_hi is an aux input to each CSINet_lo
-			pass
+			OutLayer = CsiNet_lo([EncodedLayer, CsiIn])
+		print('#{} - OutLayer: {}'.format(i, OutLayer))
+		CsiOut.append(OutLayer)
 	
 	# TO-DO: apply concatenated CSINet decoder outputs into unrolled LSTM
 	LSTM_model = stacked_LSTM(img_channels, img_height, img_width, T)
 	LSTM_model.compile(optimizer='adam', loss='mse')
 	print(LSTM_model.summary())
 
+	LSTM_in = concatenate(CsiOut)
+	LSTM_out = LSTM_model(LSTM_in)
+
+	full_model = Model(inputs=[x], outputs=[LSTM_out])
+	full_model.compile(optimizer='adam', loss='mse')
+	full_model.summary()
 	# TO-DO: compile full model with large 4D tensor as input and LSTM 4D tensor as output
 	return None # for now
 	
@@ -75,13 +87,10 @@ M_2 = 128
 CsiNet_LSTM = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2)
 
 # split tensor with lambda layer and keras backend 'split' method
-# a = Input(shape=(6,6))
-# b = Input(shape=(6,6))
-# c = concatenate([a,b])
-# print('c.shape: {}'.format(c.shape))
-# # d = Dense(6)(c[3:4])
-# d = Lambda( lambda x: slice(x, (1,2,2), (1,2,2,)))(c)
-# model = Model(inputs=[a,b],outputs=d)
+# x = Input((img_height, img_width, img_channels, T))
+# i=3
+# y = Lambda( lambda x: x[:,:,:,:,i:i+1])(x) # https://github.com/keras-team/keras/issues/890
+# model = Model(inputs=x,outputs=y)
 # model.compile(optimizer='adam', loss='mse')
 # model.summary()
 

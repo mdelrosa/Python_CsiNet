@@ -1,16 +1,18 @@
 # CsiNet_LSTM.py
 
 import tensorflow as tf
-from keras.layers import Input, concatenate, Lambda, Dense, BatchNormalization, Reshape, Conv2D, add, LeakyReLU, LSTM
-from keras.models import Model
-from keras.callbacks import TensorBoard, Callback
-from keras.backend import slice
+from tensorflow.keras.layers import concatenate, Lambda, Dense, BatchNormalization, Reshape, Conv2D, add, LeakyReLU, LSTM
+from tensorflow.keras import Input
+from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import TensorBoard, Callback
+from tensorflow.keras.utils import plot_model
 import scipy.io as sio 
 import numpy as np
 import math
 import time
 from CsiNet import *
 tf.reset_default_graph()
+# tf.enable_eager_execution()
 
 envir = 'indoor' #'indoor' or 'outdoor'
 # image params
@@ -23,24 +25,39 @@ residual_num = 2
 encoded_dim = 512  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
 T = 10
 
-def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2):
+def get_file(envir,encoded_dim,train_date):
+	file = 'CsiNet_'+(envir)+'_dim'+str(encoded_dim)+'_'+train_date
+	return "result/model_%s.h5"%file
 
+def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, data_format='channels_first'):
 	# base CSINet models
-	CsiNet_hi, encoded = CsiNet(img_channels, img_height, img_width, M_1) # CSINet with M_1 dimensional latent space
+	CsiNet_hi, encoded = CsiNet(img_channels, img_height, img_width, M_1, data_format=data_format) # CSINet with M_1 dimensional latent space
+	# plot_model(CsiNet_hi, to_file='CsiNet_hi.png')
 	aux = Input((M_1,))
-	CsiNet_lo, _ = CsiNet(img_channels, img_height, img_width, M_2, aux=aux) # CSINet with M_2+M_1 dimensional latent space
+	CsiNet_lo, _ = CsiNet(img_channels, img_height, img_width, M_2, aux=aux, data_format=data_format) # CSINet with M_2+M_1 dimensional latent space
 
 	print("--- High Dimensional (M_1) Latent Space CsiNet ---")
 	CsiNet_hi.summary()
 	print("--- Lower Dimensional (M_2) Latent Space CsiNet ---")
 	CsiNet_lo.summary()
 	# TO-DO: load weights in hi/lo models
+	# load CR=1/4 for M1-generating CsiNet
+	# weight_file = get_file(envir, M_1, '09_23')
+	# CsiNet_hi.load_weights(weight_file)
 
 	# TO-DO: split large input tensor to use as inputs to 1:T CSINets
-	x = Input((img_channels, img_height, img_width, T))
+	if(data_format == "channels_last"):
+		x = Input((T, img_height, img_width, img_channels))
+	elif(data_format == "channels_first"):
+		x = Input((T, img_channels, img_height, img_width))
+	else:
+		print("Unexpected data_format param in CsiNet input.") # raise an exception eventually. For now, print a complaint
+	# x = Input((T, img_channels, img_height, img_width))
+	print('Pre-loop: type(x): {}'.format(type(x)))
 	CsiOut = []
 	for i in range(T):
-		CsiIn = Lambda( lambda x: x[:,:,:,:,i])(x)
+		CsiIn = Lambda( lambda x: x[:,i,:,:,:])(x)
+		print('#{} - type(CsiIn): {}'.format(i, type(CsiIn)))
 		if i == 0:
 			# use CsiNet_hi for t=1
 			[OutLayer, EncodedLayer] = CsiNet_hi(CsiIn)
@@ -53,48 +70,38 @@ def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2):
 		CsiOut.append(OutLayer)
 	
 	# TO-DO: apply concatenated CSINet decoder outputs into unrolled LSTM
-	LSTM_model = stacked_LSTM(img_channels, img_height, img_width, T)
+	LSTM_model = stacked_LSTM(img_channels, img_height, img_width, T, data_format=data_format)
 	LSTM_model.compile(optimizer='adam', loss='mse')
 	print(LSTM_model.summary())
 
 	LSTM_in = concatenate(CsiOut)
 	LSTM_out = LSTM_model(LSTM_in)
 
+	# compile full model with large 4D tensor as input and LSTM 4D tensor as output
 	full_model = Model(inputs=[x], outputs=[LSTM_out])
 	full_model.compile(optimizer='adam', loss='mse')
 	full_model.summary()
-	# TO-DO: compile full model with large 4D tensor as input and LSTM 4D tensor as output
-	return None # for now
-	
+	return full_model # for now
 
-def stacked_LSTM(img_channels, img_height, img_width, T, LSTM_depth=3):
+def stacked_LSTM(img_channels, img_height, img_width, T, LSTM_depth=3, plot_bool=False, data_format="channels_first"):
 	# assume entire time-series of CSI from 1:T is concatenated
 	LSTM_dim = img_channels*img_height*img_width
-	orig_shape = (img_height, img_width, img_channels, T)
+	if(data_format == "channels_last"):
+		orig_shape = (T, img_height, img_width, img_channels)
+	elif(data_format == "channels_first"):
+		orig_shape = (T, img_channels, img_height, img_width)
 	x = Input(shape=orig_shape)
 	recurrent_out = Reshape((T,LSTM_dim))(x)
 	for i in range(LSTM_depth):
 		recurrent_out = LSTM(LSTM_dim, return_sequences=True)(recurrent_out)
 	out = Reshape(orig_shape)(recurrent_out)
-	LSTM_model = Model(input=[x], output=[out])
+	LSTM_model = Model(inputs=[x], outputs=[out])
+	if plot_bool:
+		LSTM_model.summary()
+		plot_model(LSTM_model, "LSTM_model.png")
 	return LSTM_model
 
-# snippet testing CSINet_LSTM
-T = 10
-# codeword lengths: CR=1/4 -> 512, CR=1/16 -> 128, CR=1/32 -> 64, CR=1/64 -> 32
-M_1 = 512
-M_2 = 128
-CsiNet_LSTM = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2)
-
-# split tensor with lambda layer and keras backend 'split' method
-# x = Input((img_height, img_width, img_channels, T))
-# i=3
-# y = Lambda( lambda x: x[:,:,:,:,i:i+1])(x) # https://github.com/keras-team/keras/issues/890
-# model = Model(inputs=x,outputs=y)
-# model.compile(optimizer='adam', loss='mse')
-# model.summary()
-
-# # Data loading
+# # Data loading in batches
 # if envir == 'indoor':
 #     mat = sio.loadmat('data/DATA_Htrainin.mat') 
 #     x_train = mat['HT'] # array
@@ -126,10 +133,10 @@ CsiNet_LSTM = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2)
 
 #     def on_batch_end(self, batch, logs={}):
 #         self.losses_train.append(logs.get('loss'))
-        
+		
 #     def on_epoch_end(self, epoch, logs={}):
 #         self.losses_val.append(logs.get('val_loss'))
-        
+		
 
 # history = LossHistory()
 # file = 'CsiNet_'+(envir)+'_dim'+str(encoded_dim)+time.strftime('_%m_%d')

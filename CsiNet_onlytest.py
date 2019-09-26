@@ -1,7 +1,7 @@
 import tensorflow as tf
-from keras.layers import Input, Dense, BatchNormalization, Reshape, Conv2D, add, LeakyReLU
-from keras.models import Model, model_from_json
-from keras.callbacks import TensorBoard, Callback
+from tensorflow.keras.layers import InputLayer, Dense, BatchNormalization, Reshape, Conv2D, add, LeakyReLU
+from tensorflow.keras.models import Model, model_from_json
+from tensorflow.keras.callbacks import TensorBoard, Callback
 import scipy.io as sio 
 import numpy as np
 import math

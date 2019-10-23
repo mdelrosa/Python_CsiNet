@@ -1,0 +1,8 @@
+*.png
+*__pycache__/
+slurm/*
+*.pyc
+*.sh
+*.txt
+data/*
+result/*

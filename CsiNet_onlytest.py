@@ -9,6 +9,8 @@ import time
 tf.reset_default_graph()
 
 envir = 'indoor' #'indoor' or 'outdoor'
+
+rundate = '09_23'
 # image params
 img_height = 32
 img_width = 32
@@ -18,26 +20,29 @@ img_total = img_height*img_width*img_channels
 residual_num = 2
 encoded_dim = 512  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
 
-file = 'CsiNet_'+(envir)+'_dim'+str(encoded_dim)
+
+file = 'CsiNet_'+(envir)+'_dim'+str(encoded_dim)+'_'+rundate
 
 # load json and create model
-outfile = "saved_model/model_%s.json"%file
+outfile = "result/model_%s.json"%file
 json_file = open(outfile, 'r')
 loaded_model_json = json_file.read()
 json_file.close()
 autoencoder = model_from_json(loaded_model_json)
 # load weights outto new model
-outfile = "saved_model/model_%s.h5"%file
+
+outfile = "result/model_%s.h5"%file
 autoencoder.load_weights(outfile)
 
 # Data loading
 if envir == 'indoor':
-    mat = sio.loadmat('data/DATA_Htestin.mat')
-    x_test = mat['HT'] # array
+    # mat = sio.loadmat('data/DATA_Htestin.mat')
+    mat = sio.loadmat('../Bi-Directional-Channel-Reciprocity/data/indoor53/Data100_Hvalin_down_FDD.mat')
+    X_test = x_test = mat['HD_val'] # array
 
 elif envir == 'outdoor':
-    mat = sio.loadmat('data/DATA_Htestout.mat')
-    x_test = mat['HT'] # array
+    mat = sio.loadmat('../Bi-Directional-Channel-Reciprocity/data/outdoor53/Data100_Hvalin_down_FDD.mat') # don't have this dataset at the moment
+    X_test = x_test = mat['HD_val'] # array
 
 x_test = x_test.astype('float32')
 x_test = np.reshape(x_test, (len(x_test), img_channels, img_height, img_width))  # adapt this if using `channels_first` image data format
@@ -49,13 +54,6 @@ tEnd = time.time()
 print ("It cost %f sec" % ((tEnd - tStart)/x_test.shape[0]))
 
 # Calcaulating the NMSE and rho
-if envir == 'indoor':
-    mat = sio.loadmat('data/DATA_HtestFin_all.mat')
-    X_test = mat['HF_all']# array
-
-elif envir == 'outdoor':
-    mat = sio.loadmat('data/DATA_HtestFout_all.mat')
-    X_test = mat['HF_all']# array
 
 X_test = np.reshape(X_test, (len(X_test), img_height, 125))
 x_test_real = np.reshape(x_test[:, 0, :, :], (len(x_test), -1))
@@ -109,3 +107,4 @@ for i in range(n):
     ax.get_yaxis().set_visible(False)
     ax.invert_yaxis()
 plt.show()
+

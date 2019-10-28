@@ -157,7 +157,7 @@ class LossHistory(Callback):
         self.losses_val.append(logs.get('val_loss'))
         
 history = LossHistory()
-file = 'CsiNet_Temp_'+(envir)+'_dim'+str(encoded_dim)+time.strftime('_%m_%d')
+file = 'CsiNet_Temp_'+(envir)+'_dim'+str(M_2)+time.strftime('_%m_%d')
 path = 'result/TensorBoard_%s' % file
 
 CsiNet_Temp_model.fit(x_train, x_train,
@@ -200,14 +200,14 @@ print ("It cost %f sec per sample (%f samples)" % ((tEnd - tStart)/x_test.shape[
 #     mat = sio.loadmat('data/DATA_HtestFout_all.mat')
 #     X_test = mat['HF_all']# array
 
-x_test = np.reshape(x_test, (len(x_test), img_height, 125))
-x_test_real = np.reshape(x_test[:, 0, :, :], (len(x_test), -1))
-x_test_imag = np.reshape(x_test[:, 1, :, :], (len(x_test), -1))
-x_test_C = x_test_real-0.5 + 1j*(x_test_imag-0.5)
-x_hat_real = np.reshape(x_hat[:, 0, :, :], (len(x_hat), -1))
-x_hat_imag = np.reshape(x_hat[:, 1, :, :], (len(x_hat), -1))
-x_hat_C = x_hat_real-0.5 + 1j*(x_hat_imag-0.5)
-# x_hat_F = np.reshape(x_hat_C, (len(x_hat_C), img_height, img_width))
+# x_test = np.reshape(x_test, (len(x_test), img_height, 125))
+# x_test_real = np.reshape(x_test[:, 0, :, :], (len(x_test), -1))
+# x_test_imag = np.reshape(x_test[:, 1, :, :], (len(x_test), -1))
+# x_test_C = x_test_real-0.5 + 1j*(x_test_imag-0.5)
+# x_hat_real = np.reshape(x_hat[:, 0, :, :], (len(x_hat), -1))
+# x_hat_imag = np.reshape(x_hat[:, 1, :, :], (len(x_hat), -1))
+# x_hat_C = x_hat_real-0.5 + 1j*(x_hat_imag-0.5)
+# # x_hat_F = np.reshape(x_hat_C, (len(x_hat_C), img_height, img_width))
 # X_hat = np.fft.fft(np.concatenate((x_hat_F, np.zeros((len(x_hat_C), img_height, 257-img_width))), axis=2), axis=2)
 # X_hat = X_hat[:, :, 0:125]
 
@@ -219,17 +219,17 @@ x_hat_C = x_hat_real-0.5 + 1j*(x_hat_imag-0.5)
 # rho = np.mean(aa/(n1*n2), axis=1)
 # X_hat = np.reshape(X_hat, (len(X_hat), -1))
 # X_test = np.reshape(X_test, (len(X_test), -1))
-power = np.sum(abs(x_test_C)**2, axis=1)
+# power = np.sum(abs(x_test_C)**2, axis=1)
 # power_d = np.sum(abs(X_hat)**2, axis=1)
-mse = np.sum(abs(x_test_C-x_hat_C)**2, axis=1)
+# mse = np.sum(abs(x_test_C-x_hat_C)**2, axis=1)
 
-print("In "+envir+" environment")
-print("When dimension is", encoded_dim)
-print("NMSE is ", 10*math.log10(np.mean(mse/power)))
-# print("Correlation is ", np.mean(rho))
-filename = "result/decoded_%s.csv"%file
-x_hat1 = np.reshape(x_hat, (len(x_hat), -1))
-np.savetxt(filename, x_hat1, delimiter=",")
+# print("In "+envir+" environment")
+# print("When dimension is", encoded_dim)
+# print("NMSE is ", 10*math.log10(np.mean(mse/power)))
+# # print("Correlation is ", np.mean(rho))
+# filename = "result/decoded_%s.csv"%file
+# x_hat1 = np.reshape(x_hat, (len(x_hat), -1))
+# np.savetxt(filename, x_hat1, delimiter=",")
 # filename = "result/rho_%s.csv"%file
 # np.savetxt(filename, rho, delimiter=",")
 

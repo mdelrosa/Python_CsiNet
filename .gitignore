@@ -1,6 +1,7 @@
 *.png
 *__pycache__/
 slurm/*
+slurm-*
 *.pyc
 *.sh
 *.txt

@@ -61,6 +61,7 @@ def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, data_format='c
 		file = 'CsiNet_'+(envir)+'_dim'+str(M_2)+'_'+date
 		outfile = "result/model_%s.h5"%file # h5 file for weights
 		CsiNet_lo.load_weights(outfile,by_name=True) # should only load encoder weights
+
 		# rename encoder layers since they conflict
 		for layer in CsiNet_lo.layers:
 		    if 'CR2' in layer.name:

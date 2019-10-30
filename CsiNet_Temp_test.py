@@ -34,7 +34,7 @@ img_channels = 2
 img_total = img_height*img_width*img_channels
 # network params
 residual_num = 2
-T = 3
+T = 10
 data_format = "channels_last"
 
 # # Data loading
@@ -142,11 +142,11 @@ x_test = np.reshape(x_test, get_data_shape(len(x_test), T, img_channels, img_hei
 #     X_test = mat['HF_all']# array
 
 # encoded_dims = [512,512,512,512]  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
-encoded_dims = [128,64,32]  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
+encoded_dims = [128,64]  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
 # dates = ['10_17','10_18','10_20']
 # CR2s = [128,64,32]
-dates = ['10_24','10_24','10_23']
-CR2s = [128,64,32]
+dates = ['10_28','10_29']
+CR2s = [128,64]
 power_arr = []
 mse_arr = []
 # TO-DO; load these params from json file

@@ -5,7 +5,6 @@ from tensorflow.keras.layers import concatenate, Lambda, Dense, BatchNormalizati
 from tensorflow.keras import Input
 from tensorflow.keras.models import Model, model_from_json
 from tensorflow.keras.callbacks import TensorBoard, Callback
-from tensorflow.keras.utils import plot_model
 import scipy.io as sio 
 import numpy as np
 import math
@@ -29,44 +28,41 @@ def get_file(envir,encoded_dim,train_date):
         file = 'CsiNet_'+(envir)+'_dim'+str(encoded_dim)+'_'+train_date
         return "result/model_%s.h5"%file
 
-def CsiNet_Temp(img_channels, img_height, img_width, T, M_1, M_2, data_format='channels_first', pre_t1_bool=True, pre_t2_bool=True):
+def CsiNet_Temp(img_channels, img_height, img_width, T, M_1, M_2, data_format='channels_first', t1_trainable=False, pre_t1_bool=True, pre_t2_bool=True, aux_bool=True):
         # base CsiNet model at t=1: high CR
+        CsiNet_hi, encoded = CsiNet(img_channels, img_height, img_width, M_1, data_format=data_format) # CSINet with M_1 dimensional latent space
         if pre_t1_bool:
                 date = "10_14"
                 file = 'CsiNet_'+(envir)+'_dim'+str(M_1)+'_'+date
-                outfile = "result/model_%s.json"%file
-                json_file = open(outfile)
-                loaded_model_json = json_file.read()
-                json_file.close()
-                CsiNet_hi = model_from_json(loaded_model_json)
+                # outfile = "result/model_%s.json"%file
+                # json_file = open(outfile)
+                # loaded_model_json = json_file.read()
+                # json_file.close()
+                # CsiNet_hi = model_from_json(loaded_model_json)
                 outfile = "result/model_%s.h5"%file
                 CsiNet_hi.load_weights(outfile)
-                CsiNet_hi._name = "CsiNet_hi_CR{}".format(M_1)
-        else:
-                CsiNet_hi, encoded = CsiNet(img_channels, img_height, img_width, M_1, data_format=data_format) # CSINet with M_1 dimensional latent space
-        aux = Input((M_1,))
+        CsiNet_hi.trainable = t1_trainable
         CsiNet_lo = CsiNet(img_channels, img_height, img_width, M_2, data_format=data_format) # CSINet with M_2+M_1 dimensional latent space
         # base CsiNet model for t>=1 choose whether to load weights
         if pre_t2_bool:
-                date = "10_14"
+                if aux_bool:
+                    date = "10_30"
+                    file = 'aux/model_CsiNet_'+(envir)+'_dim'+str(M_2)+'_'+date
+                else:
+                    date = "10_14"
+                    file = 'result/model_CsiNet_'+(envir)+'_dim'+str(M_2)+'_'+date
                 CR2 = M_2 # compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
-                file = 'CsiNet_'+(envir)+'_dim'+str(M_2)+'_'+date
-                outfile = "result/model_%s.json"%file # h5 file for weights
+                outfile = "%s.json"%file # h5 file for weights
                 json_file = open(outfile)
                 loaded_model_json = json_file.read()
                 json_file.close()
                 CsiNet_lo = model_from_json(loaded_model_json)
-                outfile = "result/model_%s.h5"%file
+                outfile = "%s.h5"%file
                 CsiNet_lo.load_weights(outfile)
-                CsiNet_lo._name = "CsiNet_lo_CR{}".format(CR2)
         print("--- High Dimensional (M_1) Latent Space CsiNet ---")
         CsiNet_hi.summary()
         print("--- Lower Dimensional (M_2) Latent Space CsiNet ---")
         CsiNet_lo.summary()
-        # TO-DO: load weights in hi/lo models
-        # load CR=1/4 for M1-generating CsiNet
-        # weight_file = get_file(envir, M_1, '09_23')
-        # CsiNet_hi.load_weights(weight_file)
 
         # TO-DO: split large input tensor to use as inputs to 1:T CSINets
         if(data_format == "channels_last"):
@@ -84,11 +80,13 @@ def CsiNet_Temp(img_channels, img_height, img_width, T, M_1, M_2, data_format='c
                 print('#{} - type(CsiIn): {}'.format(i, type(CsiIn)))
                 if i == 0:
                         # use CsiNet_hi for t=1
-
-                        OutLayer = CsiNet_hi(CsiIn)
+                        OutLayer, EncodedLayer = CsiNet_hi(CsiIn)
                 else:
-                        # use CsiNet_lo for t in [2:T]
-                        OutLayer = CsiNet_lo(CsiIn)
+                        if aux_bool:
+                            OutLayer = CsiNet_lo([EncodedLayer,CsiIn])
+                        else:
+                            # use CsiNet_lo for t in [2:T]
+                            OutLayer = CsiNet_lo(CsiIn)
                 print('#{} - OutLayer: {}'.format(i, OutLayer))
                 # CsiOut.append(OutLayer)
                 CsiOut.append(Reshape((1,img_height,img_width,img_channels))(OutLayer)) # when uncommented, model compiles and fits. So issue is with LSTM

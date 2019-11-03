@@ -8,6 +8,7 @@ import numpy as np
 import math
 import time
 import sys
+import json
 from CsiNet_Temp import *
 # tf.reset_default_graph()
 
@@ -34,8 +35,18 @@ img_channels = 2
 img_total = img_height*img_width*img_channels
 # network params
 residual_num = 2
-T = 10
+T = 3
 data_format = "channels_last"
+
+json_config = 'config/csinet_tempaux_test_11_03.json'
+with open(json_config) as json_file:
+    data = json.load(json_file)
+    encoded_dims = data['encoded_dims']
+    dates = data['dates']
+    model_dir = data['model_dir']
+    aux_bool = data['aux_bool']
+    M_1 = data['M_1']
+    print("Loaded json file: {}".format(json_config))
 
 # # Data loading
 # if envir == 'indoor':
@@ -132,33 +143,17 @@ x_train = np.reshape(x_train, get_data_shape(len(x_train), T, img_channels, img_
 x_val = np.reshape(x_val, get_data_shape(len(x_val), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 x_test = np.reshape(x_test, get_data_shape(len(x_test), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 
-# Calcaulating the NMSE and rho
-# if envir == 'indoor':
-#     mat = sio.loadmat('data/DATA_HtestFin_all.mat')
-#     X_test = mat['HF_all']# array
-
-# elif envir == 'outdoor':
-#     mat = sio.loadmat('data/DATA_HtestFout_all.mat')
-#     X_test = mat['HF_all']# array
-
-# encoded_dims = [512,512,512,512]  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
-encoded_dims = [128,64]  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
-# dates = ['10_17','10_18','10_20']
-# CR2s = [128,64,32]
-dates = ['10_28','10_29']
-CR2s = [128,64]
 power_arr = []
 mse_arr = []
 # TO-DO; load these params from json file
 for i in range(len(encoded_dims)):
     encoded_dim = encoded_dims[i]
     date = dates[i]
-    CR2 = CR2s[i]
     file = 'CsiNet_Temp_'+(envir)+'_dim'+str(encoded_dim)+'_'+date
 
-    print('loading model from {} with CR2={}'.format(date,CR2))
+    print('loading model from {} with CR2={}'.format(date,encoded_dim))
     # load json and create model
-    outfile = "result/model_%s.json"%file
+    outfile = "{}/model_{}.json".format(model_dir,file)
     json_file = open(outfile, 'r')
     loaded_model_json = json_file.read()
     json_file.close()
@@ -168,7 +163,7 @@ for i in range(len(encoded_dims)):
     # CsiNet_Temp_model = CsiNet_Temp(img_channels, img_height, img_width, T, encoded_dim, CR2, data_format=data_format)
 
     # load weights outto new model
-    outfile = "result/model_%s.h5"%file
+    outfile = "{}/model_{}.h5".format(model_dir,file)
     print('-> Loading weights from {}...'.format(outfile))
     CsiNet_Temp_model.load_weights(outfile)
     #Testing data

@@ -9,3 +9,5 @@ data/*
 result/*
 !result/model_CsiNet_indoor_dim*_10_14*
 LSTM/*
+aux/*
+config/*

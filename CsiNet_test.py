@@ -6,6 +6,7 @@ import scipy.io as sio
 import numpy as np
 import math
 import time
+import json
 from CsiNet_LSTM import *
 tf.reset_default_graph()
 
@@ -19,6 +20,16 @@ img_total = img_height*img_width*img_channels
 residual_num = 2
 T = 1
 data_format = "channels_last"
+
+json_config = 'config/csinet_aux_test_10_31.json'
+with open(json_config) as json_file:
+    data = json.load(json_file)
+    encoded_dims = data['encoded_dims']
+    dates = data['dates']
+    model_dir = data['model_dir']
+    aux_bool = data['aux_bool']
+    M_1 = data['M_1']
+    print("Loaded json file: {}".format(json_config))
 
 # # Data loading
 # if envir == 'indoor':
@@ -122,12 +133,14 @@ x_test = np.reshape(x_test, get_data_shape(len(x_test), img_channels, img_height
 #     mat = sio.loadmat('data/DATA_HtestFout_all.mat')
 #     X_test = mat['HF_all']# array
 
+# get a dummy tensor for zeroed out aux input
+aux_test = np.zeros((len(x_test),M_1))
 
 x_test_real = np.reshape(x_test[:, 0, :, :], (len(x_test), -1))
 x_test_imag = np.reshape(x_test[:, 1, :, :], (len(x_test), -1))
 x_test_C = x_test_real-0.5 + 1j*(x_test_imag-0.5)
-encoded_dims = [512,128,64,32]  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
-dates = ['10_14','10_14','10_14','10_14']
+# encoded_dims = [512,128,64,32]  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
+# dates = ['10_14','10_14','10_14','10_14']
 power_arr = []
 mse_arr = []
 # TO-DO; load these params from json file
@@ -137,20 +150,23 @@ for i in range(len(encoded_dims)):
     file = 'CsiNet_'+(envir)+'_dim'+str(encoded_dim)+'_'+date
 
     # load json and create model
-    outfile = "result/model_%s.json"%file
+    outfile = "{}/model_{}.json".format(model_dir,file)
     json_file = open(outfile, 'r')
     loaded_model_json = json_file.read()
     json_file.close()
     CsiNet_model = model_from_json(loaded_model_json)
 
     # load weights outto new model
-    outfile = "result/model_%s.h5"%file
+    outfile = "{}/model_{}.h5".format(model_dir,file)
     CsiNet_model.load_weights(outfile)
     
     print('loading model from {} with encoded_dim={}'.format(outfile,encoded_dim))
     #Testing data
     tStart = time.time()
-    x_hat = CsiNet_model.predict(x_test)
+    if aux_bool == 1:
+        x_hat = CsiNet_model.predict([aux_test,x_test])
+    else:
+        x_hat = CsiNet_model.predict(x_test)
     tEnd = time.time()
     print ("It cost %f sec per sample (%f samples)" % ((tEnd - tStart)/x_test.shape[0],x_test.shape[0]))
 

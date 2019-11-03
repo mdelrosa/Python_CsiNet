@@ -27,7 +27,6 @@ tf.compat.v1.keras.backend.set_session(session)
 
 envir = 'indoor' #'indoor' or 'outdoor'
 # fit params
-epochs = 1000
 # image params
 img_height = 32
 img_width = 32
@@ -37,22 +36,25 @@ img_total = img_height*img_width*img_channels
 residual_num = 2
 encoded_dim = 512  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
 # snippet testing CSINet_Temp
+debug_flag = 0
+
 def default_vals():
     # codeword lengths: CR=1/4 -> 512, CR=1/16 -> 128, CR=1/32 -> 64, CR=1/64 -> 32
-    return 3, 512, 128 # T, M_1, M_2
+    return 3, 512, 128, 1 # T, M_1, M_2. debug_flag
 
 if len(sys.argv):
     try:
         T = int(sys.argv[1])
         M_1 = int(sys.argv[2])
         M_2 = int(sys.argv[3])
+        debug_flag = int(sys.argv[4])
     except:
-        T, M_1, M_2 = default_vals()    
+        T, M_1, M_2, debug_flag = default_vals()    
 else:
     T, M_1, M_2 = default_vals()
 data_format = "channels_last"
-print("T: {} - M_1: {} - M_2: {}".format(T, M_1, M_2))
-
+print("T: {} - M_1: {} - M_2: {} - debug_flag: {}".format(T, M_1, M_2, debug_flag))
+epochs = 10 if debug_flag else 1000
 
 def add_batch(data_down, batch, type_str):
     # concatenate batch data onto end of data
@@ -86,7 +88,7 @@ def subsample_data(data,T,T_max=10):
     return data
 
 # Data loading
-batch_num = 10 # we'll use batch_num-1 for training and 1 for validation
+batch_num = 10 if debug_flag==0 else 1 # we'll use batch_num-1 for training and 1 for validation
 x_train = x_train_up = x_val = x_val_up = None
 if envir == 'indoor':
     for batch in range(1,batch_num+1):
@@ -141,7 +143,8 @@ x_test = np.reshape(x_test, get_data_shape(len(x_test), T, img_channels, img_hei
 print('-------------------------------------')
 print("Build CsiNet-Temp for CR2={}".format(M_2))
 print('-------------------------------------')
-CsiNet_Temp_model = CsiNet_Temp(img_channels, img_height, img_width, T, M_1, M_2, data_format=data_format)
+aux_bool = True # True -> differential encoding, False = no differential encoding
+CsiNet_Temp_model = CsiNet_Temp(img_channels, img_height, img_width, T, M_1, M_2, data_format=data_format, aux_bool=aux_bool)
 CsiNet_Temp_model.compile(optimizer='adam', loss='mse')
 print(CsiNet_Temp_model)
 
@@ -168,11 +171,12 @@ CsiNet_Temp_model.fit(x_train, x_train,
                 callbacks=[history,
                            TensorBoard(log_dir = path)])
 
-filename = 'result/trainloss_%s.csv'%file
+dirname = 'aux' if aux_bool else 'result'
+filename = '{}/trainloss_{}.csv'.format(dirname,file)
 loss_history = np.array(history.losses_train)
 np.savetxt(filename, loss_history, delimiter=",")
 
-filename = 'result/valloss_%s.csv'%file
+filename = '{}/valloss_{}.csv'.format(dirname,file)
 loss_history = np.array(history.losses_val)
 np.savetxt(filename, loss_history, delimiter=",")
 

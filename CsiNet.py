@@ -96,7 +96,7 @@ def CsiNet(img_channels, img_height, img_width, encoded_dim, encoder_in=None, re
 	print('image_tensor.dtype: {}'.format(tens_type))
 	print('type(aux): {}'.format(type(aux)))
 	if type(aux) == tens_type:
-		autoencoder = Model(inputs=[aux,image_tensor], outputs=[network_output])
+		autoencoder = Model(inputs=[aux,image_tensor], outputs=[network_output,encoded])
 	else:
 		autoencoder = Model(inputs=[image_tensor], outputs=[network_output, encoded])
 	if encoder_in:

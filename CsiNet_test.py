@@ -7,6 +7,7 @@ import numpy as np
 import math
 import time
 import json
+import sys
 from CsiNet_LSTM import *
 tf.reset_default_graph()
 
@@ -21,7 +22,19 @@ residual_num = 2
 T = 1
 data_format = "channels_last"
 
-json_config = 'config/csinet_aux_test_10_31.json'
+def default_vals():
+    # json_config
+    return 'config/csinet_aux_test_10_31.json'# T, M_1, M_2. debug_flag
+
+if len(sys.argv):
+    try:
+        json_config = sys.argv[1]
+    except:
+        json_config = default_vals()
+else:
+    json_config = default_vals()
+
+print('json_config: {}'.format(json_config))
 with open(json_config) as json_file:
     data = json.load(json_file)
     encoded_dims = data['encoded_dims']

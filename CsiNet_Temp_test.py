@@ -38,7 +38,7 @@ residual_num = 2
 T = 3
 data_format = "channels_last"
 
-json_config = 'config/csinet_tempaux_test_11_03.json'
+json_config = 'config/csinet_tempaux_test_11_01.json'
 with open(json_config) as json_file:
     data = json.load(json_file)
     encoded_dims = data['encoded_dims']

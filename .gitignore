@@ -1,10 +1,10 @@
 *.png
 *__pycache__/
 slurm/*
+slurm-*
 *.pyc
 *.sh
 *.txt
 data/*
 result/*
 !result/model_CsiNet_indoor_dim*_10_14*
-LSTM/*

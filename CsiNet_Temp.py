@@ -29,7 +29,7 @@ def get_file(envir,encoded_dim,train_date):
 	file = 'CsiNet_'+(envir)+'_dim'+str(encoded_dim)+'_'+train_date
 	return "result/model_%s.h5"%file
 
-def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, data_format='channels_first', pre_t1_bool=True, pre_t2_bool=True):
+def CsiNet_Temp(img_channels, img_height, img_width, T, M_1, M_2, data_format='channels_first', pre_t1_bool=True, pre_t2_bool=True):
 	# base CsiNet model at t=1: high CR
 	if pre_t1_bool:
 		date = "10_14"
@@ -44,13 +44,13 @@ def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, data_format='c
 	else:
 		CsiNet_hi, encoded = CsiNet(img_channels, img_height, img_width, M_1, data_format=data_format) # CSINet with M_1 dimensional latent space
 	aux = Input((M_1,))
-	CsiNet_lo, _ = CsiNet(img_channels, img_height, img_width, M_2, aux=aux, data_format=data_format) # CSINet with M_2+M_1 dimensional latent space
+	CsiNet_lo = CsiNet(img_channels, img_height, img_width, M_2, data_format=data_format) # CSINet with M_2+M_1 dimensional latent space
 	# base CsiNet model for t>=1 choose whether to load weights
 	if pre_t2_bool:
 		date = "10_14"
 		CR2 = M_2 # compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
 		file = 'CsiNet_'+(envir)+'_dim'+str(M_2)+'_'+date
-		outfile = "result/model_%s.h5"%file # h5 file for weights
+		outfile = "result/model_%s.json"%file # h5 file for weights
 		json_file = open(outfile)
 		loaded_model_json = json_file.read()
 		json_file.close()
@@ -89,8 +89,8 @@ def CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, data_format='c
 			# use CsiNet_lo for t in [2:T]
 			OutLayer = CsiNet_lo(CsiIn)
 		print('#{} - OutLayer: {}'.format(i, OutLayer))
-		CsiOut.append(OutLayer)
-		# CsiOut.append(Reshape((1,img_height,img_width,img_channels))(OutLayer)) # when uncommented, model compiles and fits. So issue is with LSTM
+		# CsiOut.append(OutLayer)
+		CsiOut.append(Reshape((1,img_height,img_width,img_channels))(OutLayer)) # when uncommented, model compiles and fits. So issue is with LSTM
 
 	CsiNet_Temp_out = concatenate(CsiOut,axis=1)
 	# print('LSTM_in.shape: {}'.format(LSTM_in.shape))

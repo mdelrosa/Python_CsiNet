@@ -1,33 +1,64 @@
-import tensorflow as tf
-from tensorflow.keras.layers import Dense, BatchNormalization, Reshape, Conv2D, add, LeakyReLU
-from tensorflow.keras import Input
-from tensorflow.keras.models import Model
-from tensorflow.keras.callbacks import TensorBoard, Callback
+# CsiNet_LSTM_train.py
+
+from NMSE_performance import calc_NMSE, denorm_H3, denorm_H4
+from unpack_json import *
+# json_config = 'config/indoor0001/T10/csinet_lstm_v2_02_22.json' # VALIDATED 
+json_config = 'config/outdoor300/T10/csinet_lstm_v2_03_02.json' # VALIDATED 
+# json_config = 'config/outdoor300/T5/csinet_lstm_v2_03_17.json' # VALIDATED 
+encoded_dims, dates, model_dir, aux_bool, M_1, data_format, epochs, t1_train, t2_train, gpu_num, lstm_latent_bool, conv_lstm_bool = unpack_json(json_config)
+network_name, norm_range, minmax_file, share_bool, T, dataset_spec, batch_num, lrs, batch_sizes, envir = get_keys_from_json(json_config, keys=['network_name', 'norm_range', 'minmax_file', 'share_bool', 'T', 'dataset_spec', 'batch_num', 'lrs', 'batch_sizes', 'envir'])
+load_bool, pass_through_bool, t1_train, t2_train = get_keys_from_json(json_config, keys=['load_bool', 'pass_through_bool', 't1_train', 't2_train'],is_bool=True) # import these as booleans rather than int
+lr = lrs[0]
+batch_size = batch_sizes[0]
+
+import os
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID";  # The GPU id to use, usually either "0" or "1";
+os.environ["CUDA_VISIBLE_DEVICES"]="{}".format(gpu_num);  # Do other imports now...
 import scipy.io as sio 
 import numpy as np
 import math
 import time
 import sys
+# import os
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import TensorBoard, Callback, ModelCheckpoint
+from tensorflow.core.protobuf import rewriter_config_pb2
 from CsiNet_LSTM import *
 # tf.reset_default_graph()
+# from tensorflow.keras.backend import manual_variable_initialization
+# manual_variable_initialization(True)
 
-from tensorflow.core.protobuf import rewriter_config_pb2
-tf.keras.backend.clear_session()
+def reset_keras():
+    sess = tf.keras.backend.get_session()
+    tf.keras.backend.clear_session()
+    sess.close()
+    # limit gpu resource allocation
+    config = tf.compat.v1.ConfigProto()
+    # config.gpu_options.visible_device_list = '1'
+    config.gpu_options.per_process_gpu_memory_fraction = 1.0
+    
+    # disable arithmetic optimizer
+    off = rewriter_config_pb2.RewriterConfig.OFF
+    config.graph_options.rewrite_options.arithmetic_optimization = off
+    
+    session = tf.compat.v1.Session(config=config)
+    tf.compat.v1.keras.backend.set_session(session)
+    # tf.global_variables_initializer()
 
-# limit gpu resource allocation
-config = tf.compat.v1.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 1.0
+reset_keras()
 
-# disable arithmetic optimizer
-off = rewriter_config_pb2.RewriterConfig.OFF
-config.graph_options.rewrite_options.arithmetic_optimization = off
+# # limit gpu resource allocation
+# config = tf.compat.v1.ConfigProto()
+# config.gpu_options.per_process_gpu_memory_fraction = 1.0
+# 
+# # disable arithmetic optimizer
+# off = rewriter_config_pb2.RewriterConfig.OFF
+# config.graph_options.rewrite_options.arithmetic_optimization = off
+# 
+# session = tf.compat.v1.Session(config=config)
+# tf.compat.v1.keras.backend.set_session(session)
 
-session = tf.compat.v1.Session(config=config)
-tf.compat.v1.keras.backend.set_session(session)
-
-envir = 'indoor' #'indoor' or 'outdoor'
 # fit params
-epochs = 1000
 # image params
 img_height = 32
 img_width = 32
@@ -36,23 +67,21 @@ img_total = img_height*img_width*img_channels
 # network params
 residual_num = 2
 encoded_dim = 512  #compress rate=1/4->dim.=512, compress rate=1/16->dim.=128, compress rate=1/32->dim.=64, compress rate=1/64->dim.=32
+
 # snippet testing CSINet_LSTM
 def default_vals():
     # codeword lengths: CR=1/4 -> 512, CR=1/16 -> 128, CR=1/32 -> 64, CR=1/64 -> 32
-    return 3, 512, 128 # T, M_1, M_2
+    return 0, 1 # T, M_2, LSTM_depth, convCsiNet_bool, debug_flag
 
 if len(sys.argv):
     try:
-        T = int(sys.argv[1])
-        M_1 = int(sys.argv[2])
-        M_2 = int(sys.argv[3])
+        convCsiNet_bool = int(sys.argv[1])
+        debug_flag = int(sys.argv[2])
     except:
-        T, M_1, M_2 = default_vals()    
+        convCsiNet_bool, debug_flag = default_vals()
 else:
-    T, M_1, M_2 = default_vals()
-data_format = "channels_last"
-print("T: {} - M_1: {} - M_2: {}".format(T, M_1, M_2))
-
+    convCsiNet_bool, debug_flag = default_vals()
+print("T: {} - convCsiNet_bool: {}- debug_flag: {}".format(T, convCsiNet_bool, debug_flag))
 
 def add_batch(data_down, batch, type_str):
     # concatenate batch data onto end of data
@@ -85,32 +114,28 @@ def subsample_data(data,T,T_max=10):
         data = data[:,0:T,:]
     return data
 
+def batch_str(base,num):
+        return base+'_'+str(batch)+'.mat'
+
 # Data loading
-batch_num = 10 # we'll use batch_num-1 for training and 1 for validation
+batch_num = batch_num if debug_flag == 0 else 1 # we'll use batch_num-1 for training and 1 for validation
+epochs = 10 if debug_flag else epochs
 x_train = x_train_up = x_val = x_val_up = None
-if envir == 'indoor':
-    for batch in range(1,batch_num+1):
-        print("Adding batch #{}".format(batch))
-        mat = sio.loadmat('data/data_001/Data100_Htrainin_down_FDD_32ant_{}.mat'.format(batch))
-        x_train  = add_batch(x_train, mat, 'train')
-        mat = sio.loadmat('data/data_001/Data100_Hvalin_down_FDD_32ant_{}.mat'.format(batch))
-        x_val  = add_batch(x_val, mat, 'val')
-
-    x_test = x_val
-    x_test_up = x_val_up
-
-elif envir == 'outdoor':
-    mat = sio.loadmat('../Bi-Directional-Channel-Reciprocity/data/urban3/Data100_Htrainin_down_FDD.mat')
-    mat1 = sio.loadmat('../Bi-Directional-Channel-Reciprocity/data/urban3/Data100_Htrainin_up_FDD.mat')
-    x_train = mat['HD_train']
-    x_train_up = mat1['HU_train']
-    mat = sio.loadmat('../Bi-Directional-Channel-Reciprocity/data/urban3/Data100_Hvalin_down_FDD.mat')
-    mat1 = sio.loadmat('../Bi-Directional-Channel-Reciprocity/data/urban3/Data100_Hvalin_up_FDD.mat')
-    x_val = mat['HD_val']
-    x_val_up = mat1['HU_val']
-
-    x_test = x_val
-    x_test_up = x_val_up
+if dataset_spec:
+    train_str = dataset_spec[0]
+    val_str = dataset_spec[1]
+else:
+    train_str = 'data/data_001/Data100_Htrainin_down_FDD_32ant'
+    val_str = 'data/data_001/Data100_Hvalin_down_FDD_32ant'
+for batch in range(1,batch_num+1):
+    print("Adding batch #{}".format(batch))
+    # mat = sio.loadmat('data/data_001/Data100_Htrainin_down_FDD_32ant_{}.mat'.format(batch))
+    mat = sio.loadmat(batch_str(train_str,batch))
+    x_train  = add_batch(x_train, mat, 'train')
+    mat = sio.loadmat(batch_str(val_str,batch))
+    x_val  = add_batch(x_val, mat, 'val')
+x_test = x_val
+x_test_up = x_val_up
 
 # evaluate short T for speed of training and fair comparison with DualNet-TEMP
 print('pre x_train.shape: {}'.format(x_train.shape))
@@ -136,124 +161,167 @@ x_train = np.reshape(x_train, get_data_shape(len(x_train), T, img_channels, img_
 x_val = np.reshape(x_val, get_data_shape(len(x_val), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 x_test = np.reshape(x_test, get_data_shape(len(x_test), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 
+aux_train = np.zeros((len(x_train),M_1))
+aux_test = np.zeros((len(x_test),M_1))
+
 # CRs = [128,64,32] # sweep compression ratios for latent space
-# for M_2 in CRs:
-print('-------------------------------------')
-print("Build CsiNet-LSTM for CR2={}".format(M_2))
-print('-------------------------------------')
-CsiNet_LSTM_model = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, data_format=data_format)
-CsiNet_LSTM_model.compile(optimizer='adam', loss='mse')
-print(CsiNet_LSTM_model)
+for i in range(len(encoded_dims)):
+    M_2 = encoded_dims[i]
+    date = dates[i]
+    reset_keras()
+    optimizer = Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999)
+    # optimizer = Adam(learning_rate=lr)
+    print('-------------------------------------')
+    print("Build CsiNet-LSTM for CR2={}".format(M_2))
+    print('-------------------------------------')
+    LSTM_depth=3
+    
+    # def callbacks
+    class LossHistory(Callback):
+        def on_train_begin(self, logs={}):
+            self.losses_train = []
+            self.losses_val = []
+    
+        def on_batch_end(self, batch, logs={}):
+            self.losses_train.append(logs.get('loss'))
+            
+        def on_epoch_end(self, epoch, logs={}):
+            self.losses_val.append(logs.get('val_loss'))
+    
+    if aux_bool:
+        data_train = [aux_train, x_train]
+        data_test = [aux_test, x_test]
+    else:
+        data_train = x_train
+        data_test = x_test
+    print('-> model_dir: {}'.format(model_dir))
+    if convCsiNet_bool:
+        file_base = 'CsiNet_ConvLSTM_'
+    else:
+        file_base = 'CsiNet_LSTM_'
 
-class LossHistory(Callback):
-    def on_train_begin(self, logs={}):
-        self.losses_train = []
-        self.losses_val = []
+    if convCsiNet_bool:
+        CsiNet_LSTM_model = CsiNet_ConvLSTM(img_channels, img_height, img_width, T, M_1, M_2, LSTM_depth=LSTM_depth, data_format=data_format)
+    else:
+        if load_bool:
+            if (network_name != 'model_weights_test'):
+                file = file_base+(envir)+'_dim'+str(M_2)+"_{}".format(date)
+            else:
+                file = "weights_test" 
+            # def model_with_weights(file,model_dir,weights_bool=True,encoded_bool=False):
+            # CsiNet_LSTM_model = model_with_weights_h5(file,model_dir) # option to load weights; try random initialization for the network
+            # CsiNet_LSTM_model.compile(optimizer=optimizer, loss='mse')
+            CsiNet_LSTM_model = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, LSTM_depth=LSTM_depth, data_format=data_format, t1_trainable=t1_train, t2_trainable=t2_train, share_bool=share_bool, pass_through_bool=pass_through_bool, conv_lstm_bool=conv_lstm_bool)
+            outfile = "{}/model_{}.h5".format(model_dir,file)
+            CsiNet_LSTM_model.load_weights(outfile)
+            temp = CsiNet_LSTM_model.get_weights()
+            print(temp[0])
+            print ("--- Pre-loaded network performance is... ---")
+            x_hat = CsiNet_LSTM_model.predict(data_test)
 
-    def on_batch_end(self, batch, logs={}):
-        self.losses_train.append(logs.get('loss'))
+            print("For Adam with lr={:1.1e} // batch_size={} // norm_range={}".format(lr,batch_size,norm_range))
+            if norm_range == "norm_H3":
+                x_hat_denorm = denorm_H3(x_hat,minmax_file)
+                x_test_denorm = denorm_H3(x_test,minmax_file)
+            if norm_range == "norm_H4":
+                x_hat_denorm = denorm_H4(x_hat,minmax_file)
+                x_test_denorm = denorm_H4(x_test,minmax_file)
+            print('-> x_hat range is from {} to {}'.format(np.min(x_hat_denorm),np.max(x_hat_denorm)))
+            print('-> x_test range is from {} to {} '.format(np.min(x_test_denorm),np.max(x_test_denorm)))
+            calc_NMSE(x_hat_denorm,x_test_denorm,T=T)
+        else:
+            CsiNet_LSTM_model = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, LSTM_depth=LSTM_depth, data_format=data_format, t1_trainable=t1_train, t2_trainable=t2_train, share_bool=share_bool, pass_through_bool=pass_through_bool, conv_lstm_bool=conv_lstm_bool)
+            CsiNet_LSTM_model.compile(optimizer=optimizer, loss='mse')
+
+        if (network_name != 'model_weights_test'):
+            file = file_base+(envir)+'_dim'+str(M_2)+"_{}".format(date)
+        else:
+            file = "weights_test" 
+        # save+serialize model to JSON
+        model_json = CsiNet_LSTM_model.to_json()
+        outfile = "{}/model_{}.json".format(model_dir,file)
+        with open(outfile, "w") as json_file:
+            json_file.write(model_json)
+        # serialize weights to HDF5
+        outfile = "{}/model_{}.h5".format(model_dir,file)
+        # outfile = "{}/weights_test.h5".format(model_dir,file)
+        checkpoint = ModelCheckpoint(outfile, monitor="val_loss",verbose=1)
+        # checkpoint = ModelCheckpoint(outfile, monitor="val_loss",verbose=1,save_best_only=True,mode="min")
+        history = LossHistory()
+        # path = '{}/TensorBoard_{}'.format(model_dir, file)
         
-    def on_epoch_end(self, epoch, logs={}):
-        self.losses_val.append(logs.get('val_loss'))
+        # CsiNet_LSTM_model.compile(optimizer=optimizer, loss='mse')
+        # print(CsiNet_LSTM_model)
         
-history = LossHistory()
-file = 'CsiNet_LSTM_'+(envir)+'_dim'+str(encoded_dim)+time.strftime('_%m_%d')
-path = 'result/TensorBoard_%s' % file
-
-CsiNet_LSTM_model.fit(x_train, x_train,
-                epochs=epochs,
-                batch_size=200,
-                shuffle=True,
-                validation_data=(x_val, x_val),
-                callbacks=[history,
-                           TensorBoard(log_dir = path)])
-
-filename = 'result/trainloss_%s.csv'%file
-loss_history = np.array(history.losses_train)
-np.savetxt(filename, loss_history, delimiter=",")
-
-filename = 'result/valloss_%s.csv'%file
-loss_history = np.array(history.losses_val)
-np.savetxt(filename, loss_history, delimiter=",")
-
-# save+serialize model to JSON
-model_json = CsiNet_LSTM_model.to_json()
-outfile = "result/model_%s.json"%file
-with open(outfile, "w") as json_file:
-    json_file.write(model_json)
-# serialize weights to HDF5
-outfile = "result/model_%s.h5"%file
-CsiNet_LSTM_model.save_weights(outfile)
-
-#Testing data
-tStart = time.time()
-x_hat = CsiNet_LSTM_model.predict(x_test)
-tEnd = time.time()
-print ("It cost %f sec per sample (%f samples)" % ((tEnd - tStart)/x_test.shape[0],x_test.shape[0]))
-
-# Calcaulating the NMSE and rho
-# if envir == 'indoor':
-#     mat = sio.loadmat('data/DATA_HtestFin_all.mat')
-#     X_test = mat['HF_all']# array
-
-# elif envir == 'outdoor':
-#     mat = sio.loadmat('data/DATA_HtestFout_all.mat')
-#     X_test = mat['HF_all']# array
-
-x_test = np.reshape(x_test, (len(x_test), img_height, 125))
-x_test_real = np.reshape(x_test[:, 0, :, :], (len(x_test), -1))
-x_test_imag = np.reshape(x_test[:, 1, :, :], (len(x_test), -1))
-x_test_C = x_test_real-0.5 + 1j*(x_test_imag-0.5)
-x_hat_real = np.reshape(x_hat[:, 0, :, :], (len(x_hat), -1))
-x_hat_imag = np.reshape(x_hat[:, 1, :, :], (len(x_hat), -1))
-x_hat_C = x_hat_real-0.5 + 1j*(x_hat_imag-0.5)
-# x_hat_F = np.reshape(x_hat_C, (len(x_hat_C), img_height, img_width))
-# X_hat = np.fft.fft(np.concatenate((x_hat_F, np.zeros((len(x_hat_C), img_height, 257-img_width))), axis=2), axis=2)
-# X_hat = X_hat[:, :, 0:125]
-
-# n1 = np.sqrt(np.sum(np.conj(X_test)*X_test, axis=1))
-# n1 = n1.astype('float64')
-# n2 = np.sqrt(np.sum(np.conj(X_hat)*X_hat, axis=1))
-# n2 = n2.astype('float64')
-# aa = abs(np.sum(np.conj(X_test)*X_hat, axis=1))
-# rho = np.mean(aa/(n1*n2), axis=1)
-# X_hat = np.reshape(X_hat, (len(X_hat), -1))
-# X_test = np.reshape(X_test, (len(X_test), -1))
-power = np.sum(abs(x_test_C)**2, axis=1)
-# power_d = np.sum(abs(X_hat)**2, axis=1)
-mse = np.sum(abs(x_test_C-x_hat_C)**2, axis=1)
-
-print("In "+envir+" environment")
-print("When dimension is", encoded_dim)
-print("NMSE is ", 10*math.log10(np.mean(mse/power)))
-# print("Correlation is ", np.mean(rho))
-filename = "result/decoded_%s.csv"%file
-x_hat1 = np.reshape(x_hat, (len(x_hat), -1))
-np.savetxt(filename, x_hat1, delimiter=",")
-# filename = "result/rho_%s.csv"%file
-# np.savetxt(filename, rho, delimiter=",")
-
-# import matplotlib.pyplot as plt
-# '''abs'''
-# n = 10
-# plt.figure(figsize=(20, 4))
-# for i in range(n):
-#     # display origoutal
-#     ax = plt.subplot(2, n, i + 1 )
-#     x_testplo = abs(x_test[i, 0, :, :]-0.5 + 1j*(x_test[i, 1, :, :]-0.5))
-#     plt.imshow(np.max(np.max(x_testplo))-x_testplo.T)
-#     plt.gray()
-#     ax.get_xaxis().set_visible(False)
-#     ax.get_yaxis().set_visible(False)
-#     ax.invert_yaxis()
-#     # display reconstruction
-#     ax = plt.subplot(2, n, i + 1 + n)
-#     decoded_imgsplo = abs(x_hat[i, 0, :, :]-0.5 
-#                           + 1j*(x_hat[i, 1, :, :]-0.5))
-#     plt.imshow(np.max(np.max(decoded_imgsplo))-decoded_imgsplo.T)
-#     plt.gray()
-#     ax.get_xaxis().set_visible(False)
-#     ax.get_yaxis().set_visible(False)
-#     ax.invert_yaxis()
-# plt.show()
+        # batch_size = 64   
+        # loss_weights = [0.0 ,1.0] # do not consider aux input in loss function
+        CsiNet_LSTM_model.fit(data_train, x_train,
+                         epochs=epochs,
+                         batch_size=batch_size,
+                         shuffle=True,
+                         validation_data=(data_test, x_test),
+                         callbacks=[checkpoint,
+                                    history])
+                                    # TensorBoard(log_dir = path),
+        
+        
+        filename = '{}/trainloss_{}.csv'.format(model_dir,file)
+        loss_history = np.array(history.losses_train)
+        np.savetxt(filename, loss_history, delimiter=",")
+        
+        filename = '{}/valloss_{}.csv'.format(model_dir,file)
+        loss_history = np.array(history.losses_val)
+        np.savetxt(filename, loss_history, delimiter=",")
+        
+        # CsiNet_LSTM_model.save_weights(outfile)
+        ### CsiNet_LSTM_model.save(outfile)
+        ### CsiNet_LSTM_model = save(outfile)
+        # model = load_model(outfile)
+        
+        # stuff for checking model weights
+        temp = CsiNet_LSTM_model.get_weights()
+        print(temp[0])
+        
+        #Testing data
+        tStart = time.time()
+        # x_hat = CsiNet_LSTM_model.predict(data_test)
+        x_hat = CsiNet_LSTM_model.predict(data_test)
+        tEnd = time.time()
+        print ("It cost %f sec per sample (%f samples)" % ((tEnd - tStart)/x_test.shape[0],x_test.shape[0]))
+        
+        print("For Adam with lr={:1.1e} // batch_size={} // norm_range={}".format(lr,batch_size,norm_range))
+        if norm_range == "norm_H3":
+            x_hat_denorm = denorm_H3(x_hat,minmax_file)
+            x_test_denorm = denorm_H3(x_test,minmax_file)
+        elif norm_range == "norm_H4":
+            x_hat_denorm = denorm_H4(x_hat,minmax_file)
+            x_test_denorm = denorm_H4(x_test,minmax_file)
+        print('-> x_hat range is from {} to {}'.format(np.min(x_hat_denorm),np.max(x_hat_denorm)))
+        print('-> x_test range is from {} to {} '.format(np.min(x_test_denorm),np.max(x_test_denorm)))
+        calc_NMSE(x_hat_denorm,x_test_denorm,T=T)
+        
+        CsiNet_LSTM_model.save(outfile)
+        model = load_model(outfile)
+        
+        # stuff for checking model weights
+        temp = model.get_weights()
+        print(temp[0])
+        
+        ## Performance after loading?
+        tStart = time.time()
+        # x_hat = CsiNet_LSTM_model.predict(data_test)
+        x_hat = model.predict(data_test)
+        tEnd = time.time()
+        print ("It cost %f sec per sample (%f samples)" % ((tEnd - tStart)/x_test.shape[0],x_test.shape[0]))
+        model = load_model(outfile)
+        print("Same model+weights after loading...")
+        if norm_range == "norm_H3":
+            x_hat_denorm = denorm_H3(x_hat,minmax_file)
+            x_test_denorm = denorm_H3(x_test,minmax_file)
+        elif norm_range == "norm_H4":
+            x_hat_denorm = denorm_H4(x_hat,minmax_file)
+            x_test_denorm = denorm_H4(x_test,minmax_file)
+        print('-> x_hat range is from {} to {}'.format(np.min(x_hat_denorm),np.max(x_hat_denorm)))
+        print('-> x_test range is from {} to {} '.format(np.min(x_test_denorm),np.max(x_test_denorm)))
+        calc_NMSE(x_hat_denorm,x_test_denorm,T=T)
 

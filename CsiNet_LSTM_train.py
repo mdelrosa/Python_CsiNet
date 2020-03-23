@@ -208,9 +208,6 @@ for i in range(len(encoded_dims)):
                 file = file_base+(envir)+'_dim'+str(M_2)+"_{}".format(date)
             else:
                 file = "weights_test" 
-            # def model_with_weights(file,model_dir,weights_bool=True,encoded_bool=False):
-            # CsiNet_LSTM_model = model_with_weights_h5(file,model_dir) # option to load weights; try random initialization for the network
-            # CsiNet_LSTM_model.compile(optimizer=optimizer, loss='mse')
             CsiNet_LSTM_model = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, LSTM_depth=LSTM_depth, data_format=data_format, t1_trainable=t1_train, t2_trainable=t2_train, share_bool=share_bool, pass_through_bool=pass_through_bool, conv_lstm_bool=conv_lstm_bool)
             outfile = "{}/model_{}.h5".format(model_dir,file)
             CsiNet_LSTM_model.load_weights(outfile)
@@ -253,8 +250,6 @@ for i in range(len(encoded_dims)):
         # CsiNet_LSTM_model.compile(optimizer=optimizer, loss='mse')
         # print(CsiNet_LSTM_model)
         
-        # batch_size = 64   
-        # loss_weights = [0.0 ,1.0] # do not consider aux input in loss function
         CsiNet_LSTM_model.fit(data_train, x_train,
                          epochs=epochs,
                          batch_size=batch_size,
@@ -273,15 +268,6 @@ for i in range(len(encoded_dims)):
         loss_history = np.array(history.losses_val)
         np.savetxt(filename, loss_history, delimiter=",")
         
-        # CsiNet_LSTM_model.save_weights(outfile)
-        ### CsiNet_LSTM_model.save(outfile)
-        ### CsiNet_LSTM_model = save(outfile)
-        # model = load_model(outfile)
-        
-        # stuff for checking model weights
-        temp = CsiNet_LSTM_model.get_weights()
-        print(temp[0])
-        
         #Testing data
         tStart = time.time()
         # x_hat = CsiNet_LSTM_model.predict(data_test)
@@ -299,29 +285,3 @@ for i in range(len(encoded_dims)):
         print('-> x_hat range is from {} to {}'.format(np.min(x_hat_denorm),np.max(x_hat_denorm)))
         print('-> x_test range is from {} to {} '.format(np.min(x_test_denorm),np.max(x_test_denorm)))
         calc_NMSE(x_hat_denorm,x_test_denorm,T=T)
-        
-        CsiNet_LSTM_model.save(outfile)
-        model = load_model(outfile)
-        
-        # stuff for checking model weights
-        temp = model.get_weights()
-        print(temp[0])
-        
-        ## Performance after loading?
-        tStart = time.time()
-        # x_hat = CsiNet_LSTM_model.predict(data_test)
-        x_hat = model.predict(data_test)
-        tEnd = time.time()
-        print ("It cost %f sec per sample (%f samples)" % ((tEnd - tStart)/x_test.shape[0],x_test.shape[0]))
-        model = load_model(outfile)
-        print("Same model+weights after loading...")
-        if norm_range == "norm_H3":
-            x_hat_denorm = denorm_H3(x_hat,minmax_file)
-            x_test_denorm = denorm_H3(x_test,minmax_file)
-        elif norm_range == "norm_H4":
-            x_hat_denorm = denorm_H4(x_hat,minmax_file)
-            x_test_denorm = denorm_H4(x_test,minmax_file)
-        print('-> x_hat range is from {} to {}'.format(np.min(x_hat_denorm),np.max(x_hat_denorm)))
-        print('-> x_test range is from {} to {} '.format(np.min(x_test_denorm),np.max(x_test_denorm)))
-        calc_NMSE(x_hat_denorm,x_test_denorm,T=T)
-

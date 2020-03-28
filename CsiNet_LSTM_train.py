@@ -2,8 +2,8 @@
 
 from NMSE_performance import calc_NMSE, denorm_H3, denorm_H4
 from unpack_json import *
-# json_config = 'config/indoor0001/T10/csinet_lstm_v2_02_22.json' # VALIDATED 
-json_config = 'config/outdoor300/T10/csinet_lstm_v2_03_02.json' # VALIDATED 
+json_config = 'config/indoor0001/T10/csinet_lstm_v2_02_22.json' # VALIDATED 
+# json_config = 'config/outdoor300/T10/csinet_lstm_v2_03_02.json' # VALIDATED 
 # json_config = 'config/outdoor300/T5/csinet_lstm_v2_03_17.json' # VALIDATED 
 encoded_dims, dates, model_dir, aux_bool, M_1, data_format, epochs, t1_train, t2_train, gpu_num, lstm_latent_bool, conv_lstm_bool = unpack_json(json_config)
 network_name, norm_range, minmax_file, share_bool, T, dataset_spec, batch_num, lrs, batch_sizes, envir = get_keys_from_json(json_config, keys=['network_name', 'norm_range', 'minmax_file', 'share_bool', 'T', 'dataset_spec', 'batch_num', 'lrs', 'batch_sizes', 'envir'])

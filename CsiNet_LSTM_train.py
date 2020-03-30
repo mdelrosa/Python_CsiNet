@@ -20,8 +20,13 @@ import math
 import time
 import sys
 # import os
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import TensorBoard, Callback, ModelCheckpoint
+try:
+    from tensorflow.keras.optimizers import Adam
+    from tensorflow.keras.callbacks import TensorBoard, Callback, ModelCheckpoint
+except:
+    import keras
+    from keras.optimizers import Adam
+    from keras.callbacks import TensorBoard, Callback, ModelCheckpoint
 from tensorflow.core.protobuf import rewriter_config_pb2
 from CsiNet_LSTM import *
 # tf.reset_default_graph()
@@ -33,16 +38,23 @@ def reset_keras():
     tf.keras.backend.clear_session()
     sess.close()
     # limit gpu resource allocation
-    config = tf.compat.v1.ConfigProto()
+    try:
+    	config = tf.compat.v1.ConfigProto()
+    except:
+    	config = tf.ConfigProto()
     # config.gpu_options.visible_device_list = '1'
     config.gpu_options.per_process_gpu_memory_fraction = 1.0
     
     # disable arithmetic optimizer
     off = rewriter_config_pb2.RewriterConfig.OFF
     config.graph_options.rewrite_options.arithmetic_optimization = off
-    
-    session = tf.compat.v1.Session(config=config)
-    tf.compat.v1.keras.backend.set_session(session)
+   
+    try: 
+    	session = tf.compat.v1.Session(config=config)
+    	tf.compat.v1.keras.backend.set_session(session)
+    except:
+    	session = tf.Session(config=config)
+    	keras.backend.set_session(session)
     # tf.global_variables_initializer()
 
 reset_keras()
@@ -169,7 +181,10 @@ for i in range(len(encoded_dims)):
     M_2 = encoded_dims[i]
     date = dates[i]
     reset_keras()
-    optimizer = Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999)
+    try:
+    	optimizer = Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999)
+    except:
+    	optimizer = Adam(lr=lr, beta_1=0.9, beta_2=0.999)
     # optimizer = Adam(learning_rate=lr)
     print('-------------------------------------')
     print("Build CsiNet-LSTM for CR2={}".format(M_2))

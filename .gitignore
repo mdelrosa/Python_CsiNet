@@ -11,3 +11,7 @@ result/*
 LSTM/*
 aux/*
 config/*
+!config/outdoor300
+v1/*
+v2/*
+simp/*

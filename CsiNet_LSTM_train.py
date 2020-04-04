@@ -3,8 +3,12 @@
 from NMSE_performance import calc_NMSE, denorm_H3, denorm_H4
 from unpack_json import *
 # json_config = 'config/indoor0001/T10/csinet_lstm_v2_02_22.json' # VALIDATED 
-json_config = 'config/outdoor300/T10/csinet_lstm_v2_03_02.json' # VALIDATED 
+# json_config = 'config/outdoor300/T10/csinet_lstm_v2_03_02.json' # VALIDATED 
 # json_config = 'config/outdoor300/T5/csinet_lstm_v2_03_17.json' # VALIDATED 
+# json_config = 'config/indoor0001/T10/replication/csinet_lstm_v2_03_28.json' # IN PROGRESS
+# json_config = 'config/outdoor300/T10/csinet_lstm_v2_CR128.json' # CURRENT PROGRESS: 500 epochs
+json_config = 'config/outdoor300/T10/csinet_lstm_v2_CR64.json' # CURRENT PROGRESS: 532 epochs
+# json_config = 'config/outdoor300/T10/csinet_lstm_v2_CR32.json' # CURRENT PROGRESS: 500 epochs 
 encoded_dims, dates, model_dir, aux_bool, M_1, data_format, epochs, t1_train, t2_train, gpu_num, lstm_latent_bool, conv_lstm_bool = unpack_json(json_config)
 network_name, norm_range, minmax_file, share_bool, T, dataset_spec, batch_num, lrs, batch_sizes, envir = get_keys_from_json(json_config, keys=['network_name', 'norm_range', 'minmax_file', 'share_bool', 'T', 'dataset_spec', 'batch_num', 'lrs', 'batch_sizes', 'envir'])
 load_bool, pass_through_bool, t1_train, t2_train = get_keys_from_json(json_config, keys=['load_bool', 'pass_through_bool', 't1_train', 't2_train'],is_bool=True) # import these as booleans rather than int
@@ -132,10 +136,12 @@ def batch_str(base,num):
 # Data loading
 batch_num = batch_num if debug_flag == 0 else 1 # we'll use batch_num-1 for training and 1 for validation
 epochs = 10 if debug_flag else epochs
-x_train = x_train_up = x_val = x_val_up = None
+x_train = x_train_up = x_val = x_val_up = x_test = x_test_up = None
 if dataset_spec:
     train_str = dataset_spec[0]
     val_str = dataset_spec[1]
+    if len(dataset_spec) ==3:
+        test_str = dataset_spec[2]
 else:
     train_str = 'data/data_001/Data100_Htrainin_down_FDD_32ant'
     val_str = 'data/data_001/Data100_Hvalin_down_FDD_32ant'
@@ -146,8 +152,12 @@ for batch in range(1,batch_num+1):
     x_train  = add_batch(x_train, mat, 'train')
     mat = sio.loadmat(batch_str(val_str,batch))
     x_val  = add_batch(x_val, mat, 'val')
-x_test = x_val
-x_test_up = x_val_up
+    if len(dataset_spec) ==3:
+        mat = sio.loadmat(batch_str(test_str,batch))
+        x_test  = add_batch(x_test, mat, 'test')
+if len(dataset_spec) < 3:
+    x_test = x_val
+    x_test_up = x_val_up
 
 # evaluate short T for speed of training and fair comparison with DualNet-TEMP
 print('pre x_train.shape: {}'.format(x_train.shape))
@@ -165,15 +175,12 @@ x_test = x_test.astype('float32')
 # x_val = split_complex(x_val)
 # x_test = split_complex(x_test)
 
-print('x_train.shape: {} - x_val.shape: {} - x_test.shape: {}'.format(x_train.shape, x_val.shape, x_test.shape))
-
-# data_shape = (len(tensor), T, img_height, img_width, img_channels)
-
 x_train = np.reshape(x_train, get_data_shape(len(x_train), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 x_val = np.reshape(x_val, get_data_shape(len(x_val), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 x_test = np.reshape(x_test, get_data_shape(len(x_test), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 
 aux_train = np.zeros((len(x_train),M_1))
+aux_val = np.zeros((len(x_val),M_1))
 aux_test = np.zeros((len(x_test),M_1))
 
 # CRs = [128,64,32] # sweep compression ratios for latent space
@@ -205,6 +212,7 @@ for i in range(len(encoded_dims)):
     
     if aux_bool:
         data_train = [aux_train, x_train]
+        data_val = [aux_val, x_test]
         data_test = [aux_test, x_test]
     else:
         data_train = x_train
@@ -269,7 +277,7 @@ for i in range(len(encoded_dims)):
                          epochs=epochs,
                          batch_size=batch_size,
                          shuffle=True,
-                         validation_data=(data_test, x_test),
+                         validation_data=(data_val, x_val),
                          callbacks=[checkpoint,
                                     history])
                                     # TensorBoard(log_dir = path),

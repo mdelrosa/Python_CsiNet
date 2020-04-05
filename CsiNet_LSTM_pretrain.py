@@ -1,9 +1,12 @@
 # CsiNet_LSTM_pretrain.py
 from unpack_json import *
-json_config = 'config/indoor0001/T10/replication/csinet_lstm_pretrain_04_04.json' 
+# json_config = 'config/indoor0001/T10/replication/csinet_lstm_pretrain_04_04.json' 
+json_config = 'config/outdoor300/T10/csinet_lstm_pretrain_depth3.json' # PROGRESS: 250 epochs
+# json_config = 'config/outdoor300/T10/csinet_lstm_pretrain_depth2.json' # PROGRESS: 250 epochs
+# json_config = 'config/outdoor300/T10/csinet_lstm_pretrain_depth1.json' # PROGRESS: 0 epochs
 
 encoded_dims, dates, model_dir, aux_bool, M_1, data_format, epochs, t1_train, t2_train, gpu_num, lstm_latent_bool, conv_lstm_bool = unpack_json(json_config)
-norm_range, minmax_file, T, dataset_spec, batch_num, lrs, batch_sizes, envir = get_keys_from_json(json_config, keys=['norm_range', 'minmax_file', 'T', 'dataset_spec', 'batch_num', 'lrs', 'batch_sizes', 'envir'])
+load_bool, norm_range, minmax_file, T, dataset_spec, batch_num, lrs, batch_sizes, envir = get_keys_from_json(json_config, keys=['load_bool','norm_range', 'minmax_file', 'T', 'dataset_spec', 'batch_num', 'lrs', 'batch_sizes', 'envir'])
 t1_train, t2_train = get_keys_from_json(json_config, keys=['t1_train', 't2_train'],is_bool=True) # import these as booleans rather than int
 
 import os
@@ -169,7 +172,9 @@ aux_train = np.zeros((len(x_train),M_1))
 aux_val = np.zeros((len(x_val),M_1))
 aux_test = np.zeros((len(x_test),M_1))
 
-for LSTM_depth in encoded_dims:
+for i in range(len(encoded_dims)):
+    LSTM_depth = encoded_dims[i]
+    date = dates[i]
     for lr in lrs:
         reset_keras()
         optimizer = Adam(learning_rate=lr)
@@ -177,16 +182,33 @@ for LSTM_depth in encoded_dims:
             print('=====================================')
             print("LSTM Depth={} // Adam with lr={:1.1e} // batch_size={}".format(LSTM_depth,lr,batch_size))
             print('=====================================')
+            """ Build model """
             if conv_lstm_bool: 
-                file = 'convLSTM_'+(envir)+'_T{}'.format(T)+'_depth{}'.format(LSTM_depth)+time.strftime('_%m_%d')
+                file = 'CsiNet_convLSTM_{}_D{}_{}'.format(envir,LSTM_depth,date)
                 print("Convolutional recurrent activations.")
                 LSTM_model = stacked_convLSTM(img_channels, img_height, img_width, T, lstm_latent_bool,LSTM_depth=LSTM_depth, data_format=data_format)
             else:
-                file = 'LSTM_'+(envir)+'_T{}'.format(T)+'_depth{}'.format(LSTM_depth)+time.strftime('_%m_%d')
                 print("Non-convolutional recurrent activations.")
-                # LSTM_model = stacked_LSTM(img_channels, img_height, img_width, T, lstm_latent_bool,LSTM_depth=LSTM_depth, data_format=data_format)
-                # LSTM_model = stacked_LSTM(img_channels, img_height, img_width, T, lstm_latent_bool,LSTM_depth=LSTM_depth, data_format=data_format,recurrent_initializer=initializers.Identity(gain=1.0),kernel_initializer=initializers.Identity(gain=1.0))
+                file = 'CsiNet_LSTM_{}_D{}_{}'.format(envir,LSTM_depth,date)
                 LSTM_model = stacked_LSTM(img_channels, img_height, img_width, T, lstm_latent_bool,LSTM_depth=LSTM_depth, data_format=data_format)
+
+            """ Load weights into built model """
+            if load_bool:
+                outfile = "{}/model_{}_{:1.1e}_bs{}.h5".format(model_dir,file, lr, batch_size)
+                LSTM_model.load_weights(outfile)
+                print ("--- Pre-loaded network performance is... ---")
+                x_hat = LSTM_model.predict(x_test)
+
+                print("For Adam with lr={:1.1e} // batch_size={} // norm_range={}".format(lr,batch_size,norm_range))
+                if norm_range == "norm_H3":
+                    x_hat_denorm = denorm_H3(x_hat,minmax_file)
+                    x_test_denorm = denorm_H3(x_test,minmax_file)
+                if norm_range == "norm_H4":
+                    x_hat_denorm = denorm_H4(x_hat,minmax_file)
+                    x_test_denorm = denorm_H4(x_test,minmax_file)
+                print('-> x_hat range is from {} to {}'.format(np.min(x_hat_denorm),np.max(x_hat_denorm)))
+                print('-> x_test range is from {} to {} '.format(np.min(x_test_denorm),np.max(x_test_denorm)))
+                calc_NMSE(x_hat_denorm,x_test_denorm,T=T)
             LSTM_model.compile(optimizer=optimizer, loss='mse')
             
             class LossHistory(Callback):
@@ -200,11 +222,8 @@ for LSTM_depth in encoded_dims:
                 def on_epoch_end(self, epoch, logs={}):
                     self.losses_val.append(logs.get('val_loss'))
                     
+            """ Files for saving performance history/weights """
             history = LossHistory()
-            if conv_lstm_bool:
-                file = 'CsiNet_convLSTM_{}_D{}_{}'.format(envir,LSTM_depth,time.strftime('%m_%d'))
-            else:
-                file = 'CsiNet_LSTM_{}_D{}_{}'.format(envir,LSTM_depth,time.strftime('%m_%d'))
             path = '{}/TensorBoard_{}_{:1.1e}_bs{}'.format(model_dir, file, lr, batch_size)
             
             model_json = LSTM_model.to_json()
@@ -231,9 +250,7 @@ for LSTM_depth in encoded_dims:
             loss_history = np.array(history.losses_val)
             np.savetxt(filename, loss_history, delimiter=",")
             
-            #Testing data
-            print("reload best weights...".format(outfile))
-            LSTM_model.load_weights(outfile)
+            """ Test network performance after training """ 
             tStart = time.time()
             x_hat = LSTM_model.predict(x_test)
             tEnd = time.time()

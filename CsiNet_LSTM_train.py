@@ -234,8 +234,6 @@ for i in range(len(encoded_dims)):
             CsiNet_LSTM_model = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, LSTM_depth=LSTM_depth, data_format=data_format, t1_trainable=t1_train, t2_trainable=t2_train, share_bool=share_bool, pass_through_bool=pass_through_bool, conv_lstm_bool=conv_lstm_bool)
             outfile = "{}/model_{}.h5".format(model_dir,file)
             CsiNet_LSTM_model.load_weights(outfile)
-            temp = CsiNet_LSTM_model.get_weights()
-            print(temp[0])
             print ("--- Pre-loaded network performance is... ---")
             x_hat = CsiNet_LSTM_model.predict(data_test)
 

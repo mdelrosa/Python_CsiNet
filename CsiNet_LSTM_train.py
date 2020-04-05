@@ -5,7 +5,10 @@ from unpack_json import *
 # json_config = 'config/indoor0001/T10/csinet_lstm_v2_02_22.json' # VALIDATED 
 # json_config = 'config/outdoor300/T10/csinet_lstm_v2_03_02.json' # VALIDATED 
 # json_config = 'config/outdoor300/T5/csinet_lstm_v2_03_17.json' # VALIDATED 
-json_config = 'config/indoor0001/T10/replication/csinet_lstm_v2_03_28.json' # IN PROGRESS
+# json_config = 'config/indoor0001/T10/replication/csinet_lstm_v2_03_28.json' # IN PROGRESS
+# json_config = 'config/outdoor300/T10/csinet_lstm_v2_CR128.json' # CURRENT PROGRESS: 500 epochs
+json_config = 'config/outdoor300/T10/csinet_lstm_v2_CR64.json' # CURRENT PROGRESS: 532 epochs
+# json_config = 'config/outdoor300/T10/csinet_lstm_v2_CR32.json' # CURRENT PROGRESS: 500 epochs 
 encoded_dims, dates, model_dir, aux_bool, M_1, data_format, epochs, t1_train, t2_train, gpu_num, lstm_latent_bool, conv_lstm_bool = unpack_json(json_config)
 network_name, norm_range, minmax_file, share_bool, T, dataset_spec, batch_num, lrs, batch_sizes, envir = get_keys_from_json(json_config, keys=['network_name', 'norm_range', 'minmax_file', 'share_bool', 'T', 'dataset_spec', 'batch_num', 'lrs', 'batch_sizes', 'envir'])
 load_bool, pass_through_bool, t1_train, t2_train = get_keys_from_json(json_config, keys=['load_bool', 'pass_through_bool', 't1_train', 't2_train'],is_bool=True) # import these as booleans rather than int
@@ -21,8 +24,13 @@ import math
 import time
 import sys
 # import os
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import TensorBoard, Callback, ModelCheckpoint
+try:
+    from tensorflow.keras.optimizers import Adam
+    from tensorflow.keras.callbacks import TensorBoard, Callback, ModelCheckpoint
+except:
+    import keras
+    from keras.optimizers import Adam
+    from keras.callbacks import TensorBoard, Callback, ModelCheckpoint
 from tensorflow.core.protobuf import rewriter_config_pb2
 from CsiNet_LSTM import *
 # tf.reset_default_graph()
@@ -34,16 +42,23 @@ def reset_keras():
     tf.keras.backend.clear_session()
     sess.close()
     # limit gpu resource allocation
-    config = tf.compat.v1.ConfigProto()
+    try:
+    	config = tf.compat.v1.ConfigProto()
+    except:
+    	config = tf.ConfigProto()
     # config.gpu_options.visible_device_list = '1'
     config.gpu_options.per_process_gpu_memory_fraction = 1.0
     
     # disable arithmetic optimizer
     off = rewriter_config_pb2.RewriterConfig.OFF
     config.graph_options.rewrite_options.arithmetic_optimization = off
-    
-    session = tf.compat.v1.Session(config=config)
-    tf.compat.v1.keras.backend.set_session(session)
+   
+    try: 
+    	session = tf.compat.v1.Session(config=config)
+    	tf.compat.v1.keras.backend.set_session(session)
+    except:
+    	session = tf.Session(config=config)
+    	keras.backend.set_session(session)
     # tf.global_variables_initializer()
 
 reset_keras()
@@ -138,9 +153,7 @@ for batch in range(1,batch_num+1):
     mat = sio.loadmat(batch_str(val_str,batch))
     x_val  = add_batch(x_val, mat, 'val')
     if len(dataset_spec) ==3:
-        print("test_str: {}".format(test_str))
         mat = sio.loadmat(batch_str(test_str,batch))
-        print("test matr: {}".format(mat))
         x_test  = add_batch(x_test, mat, 'test')
 if len(dataset_spec) < 3:
     x_test = x_val
@@ -162,10 +175,6 @@ x_test = x_test.astype('float32')
 # x_val = split_complex(x_val)
 # x_test = split_complex(x_test)
 
-print('x_train.shape: {} - x_val.shape: {} - x_test.shape: {}'.format(x_train.shape, x_val.shape, x_test.shape))
-
-# data_shape = (len(tensor), T, img_height, img_width, img_channels)
-
 x_train = np.reshape(x_train, get_data_shape(len(x_train), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 x_val = np.reshape(x_val, get_data_shape(len(x_val), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
 x_test = np.reshape(x_test, get_data_shape(len(x_test), T, img_channels, img_height, img_width,data_format))  # adapt this if using `channels_first` image data format
@@ -179,7 +188,10 @@ for i in range(len(encoded_dims)):
     M_2 = encoded_dims[i]
     date = dates[i]
     reset_keras()
-    optimizer = Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999)
+    try:
+    	optimizer = Adam(learning_rate=lr, beta_1=0.9, beta_2=0.999)
+    except:
+    	optimizer = Adam(lr=lr, beta_1=0.9, beta_2=0.999)
     # optimizer = Adam(learning_rate=lr)
     print('-------------------------------------')
     print("Build CsiNet-LSTM for CR2={}".format(M_2))
@@ -222,8 +234,6 @@ for i in range(len(encoded_dims)):
             CsiNet_LSTM_model = CsiNet_LSTM(img_channels, img_height, img_width, T, M_1, M_2, LSTM_depth=LSTM_depth, data_format=data_format, t1_trainable=t1_train, t2_trainable=t2_train, share_bool=share_bool, pass_through_bool=pass_through_bool, conv_lstm_bool=conv_lstm_bool)
             outfile = "{}/model_{}.h5".format(model_dir,file)
             CsiNet_LSTM_model.load_weights(outfile)
-            temp = CsiNet_LSTM_model.get_weights()
-            print(temp[0])
             print ("--- Pre-loaded network performance is... ---")
             x_hat = CsiNet_LSTM_model.predict(data_test)
 

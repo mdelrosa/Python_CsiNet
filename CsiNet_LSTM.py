@@ -1,6 +1,7 @@
 # CsiNet_LSTM.py
 
 import tensorflow as tf
+# try:
 from tensorflow.keras.layers import concatenate, Lambda, Dense, BatchNormalization, Reshape, Conv2D, add, LeakyReLU, LSTM, CuDNNLSTM, ConvLSTM2D
 from tensorflow.keras import Input
 from tensorflow.keras.models import Model, model_from_json
@@ -8,6 +9,14 @@ from tensorflow.keras.callbacks import TensorBoard, Callback
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras import initializers 
 from tensorflow.keras.optimizers import Adam
+# except:
+# 	from keras.layers import concatenate, Lambda, Dense, BatchNormalization, Reshape, Conv2D, add, LeakyReLU, LSTM, CuDNNLSTM, ConvLSTM2D
+# 	from keras import Input
+# 	from keras.models import Model, model_from_json
+# 	from keras.callbacks import TensorBoard, Callback
+# 	from keras.utils import plot_model
+# 	from keras import initializers 
+# 	from keras.optimizers import Adam
 import scipy.io as sio 
 import numpy as np
 import math
